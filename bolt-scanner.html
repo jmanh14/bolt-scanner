@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BoltScan — Wrench Size Identifier</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Share+Tech+Mono&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d0f0e;
+    --panel: #141716;
+    --border: #2a2e2b;
+    --accent: #c8f542;
+    --accent2: #f5a623;
+    --muted: #4a524c;
+    --text: #e8ede9;
+    --text-dim: #7a8a7c;
+    --red: #ff4444;
+    --scan-green: #39ff8b;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Barlow', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0 16px 40px;
+    background-image: 
+      repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(42,46,43,0.3) 39px, rgba(42,46,43,0.3) 40px),
+      repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(42,46,43,0.15) 39px, rgba(42,46,43,0.15) 40px);
+  }
+
+  /* HEADER */
+  header {
+    width: 100%;
+    max-width: 640px;
+    padding: 28px 0 20px;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    border-bottom: 2px solid var(--accent);
+    margin-bottom: 28px;
+  }
+  .logo {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 3rem;
+    letter-spacing: 0.04em;
+    color: var(--accent);
+    line-height: 1;
+  }
+  .logo span { color: var(--text-dim); }
+  .tagline {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--muted);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  /* MAIN CARD */
+  .card {
+    width: 100%;
+    max-width: 640px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* CAMERA AREA */
+  .camera-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4/3;
+    background: #000;
+    overflow: hidden;
+  }
+  #video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  #snapshot {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: none;
+    position: absolute;
+    top: 0; left: 0;
+  }
+  canvas { display: none; }
+
+  /* CROSSHAIR OVERLAY */
+  .crosshair {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .crosshair-ring {
+    width: 140px;
+    height: 140px;
+    border: 2px solid rgba(200, 245, 66, 0.7);
+    border-radius: 50%;
+    position: relative;
+    box-shadow: 0 0 0 1px rgba(200,245,66,0.1), inset 0 0 0 1px rgba(200,245,66,0.1);
+    animation: pulse-ring 2s ease-in-out infinite;
+  }
+  .crosshair-ring::before,
+  .crosshair-ring::after {
+    content: '';
+    position: absolute;
+    background: rgba(200, 245, 66, 0.8);
+  }
+  .crosshair-ring::before {
+    width: 1px; height: 20px;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .crosshair-ring::after {
+    height: 1px; width: 20px;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+  }
+  @keyframes pulse-ring {
+    0%, 100% { opacity: 0.7; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.03); }
+  }
+
+  /* Corner brackets */
+  .corner {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    border-color: var(--accent);
+    border-style: solid;
+  }
+  .corner-tl { top: 16px; left: 16px; border-width: 2px 0 0 2px; }
+  .corner-tr { top: 16px; right: 16px; border-width: 2px 2px 0 0; }
+  .corner-bl { bottom: 16px; left: 16px; border-width: 0 0 2px 2px; }
+  .corner-br { bottom: 16px; right: 16px; border-width: 0 2px 2px 0; }
+
+  /* SCAN LINE */
+  .scan-line {
+    position: absolute;
+    left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--scan-green), transparent);
+    opacity: 0;
+    top: 0;
+  }
+  .scanning .scan-line {
+    opacity: 1;
+    animation: scan 1.4s ease-in-out infinite;
+  }
+  @keyframes scan {
+    0% { top: 0%; }
+    100% { top: 100%; }
+  }
+
+  /* STATUS BAR */
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: #0a0c0b;
+    border-top: 1px solid var(--border);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--text-dim);
+  }
+  .status-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--muted);
+    flex-shrink: 0;
+  }
+  .status-dot.live { background: var(--scan-green); box-shadow: 0 0 6px var(--scan-green); animation: blink 1s ease-in-out infinite; }
+  .status-dot.analyzing { background: var(--accent2); box-shadow: 0 0 6px var(--accent2); animation: blink 0.4s ease-in-out infinite; }
+  .status-dot.done { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+  .status-dot.error { background: var(--red); }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  /* CONTROLS */
+  .controls {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .tip {
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    line-height: 1.5;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .tip::before { content: '⚙'; font-size: 0.9rem; flex-shrink: 0; margin-top: 1px; }
+
+  .btn-row { display: flex; gap: 10px; }
+
+  button {
+    font-family: 'Barlow', sans-serif;
+    font-weight: 700;
+    font-size: 0.95rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    border: none;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.15s;
+    padding: 13px 20px;
+  }
+
+  #scanBtn {
+    flex: 1;
+    background: var(--accent);
+    color: #0d0f0e;
+    font-size: 1.05rem;
+    letter-spacing: 0.08em;
+    position: relative;
+    overflow: hidden;
+  }
+  #scanBtn::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(255,255,255,0.15);
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  #scanBtn:hover::after { opacity: 1; }
+  #scanBtn:active { transform: scale(0.98); }
+  #scanBtn:disabled {
+    background: var(--muted);
+    color: var(--bg);
+    cursor: not-allowed;
+  }
+  #scanBtn:disabled::after { display: none; }
+
+  #retakeBtn {
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    display: none;
+  }
+  #retakeBtn:hover { border-color: var(--text-dim); color: var(--text); }
+
+  /* RESULTS */
+  #results {
+    display: none;
+    padding: 0 20px 20px;
+    animation: fadeUp 0.4s ease;
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .result-header {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .result-header::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .size-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .size-card {
+    background: #0a0c0b;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 16px;
+    position: relative;
+    overflow: hidden;
+  }
+  .size-card.primary {
+    border-color: var(--accent);
+    grid-column: 1 / -1;
+  }
+  .size-card.primary::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent);
+  }
+
+  .size-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .size-value {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 2.8rem;
+    color: var(--accent);
+    line-height: 1;
+  }
+  .size-card:not(.primary) .size-value {
+    font-size: 2rem;
+    color: var(--text);
+  }
+  .size-sub {
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+
+  .bolt-info {
+    background: #0a0c0b;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 14px 16px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 20px;
+    margin-bottom: 16px;
+    font-size: 0.82rem;
+  }
+  .info-item { display: flex; flex-direction: column; gap: 2px; }
+  .info-key {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.62rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .info-val { color: var(--text); font-weight: 500; }
+
+  .confidence-bar {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 10px;
+  }
+  .confidence-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent2), var(--accent));
+    border-radius: 2px;
+    transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+    width: 0%;
+  }
+
+  .confidence-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 5px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--muted);
+  }
+  #confidencePct { color: var(--accent); }
+
+  .disclaimer {
+    font-size: 0.72rem;
+    color: var(--muted);
+    line-height: 1.5;
+    border-left: 2px solid var(--border);
+    padding-left: 10px;
+  }
+
+  /* ERROR STATE */
+  #errorBox {
+    display: none;
+    padding: 0 20px 20px;
+  }
+  .error-inner {
+    background: rgba(255,68,68,0.08);
+    border: 1px solid rgba(255,68,68,0.3);
+    border-radius: 3px;
+    padding: 14px 16px;
+    font-size: 0.85rem;
+    color: #ff8080;
+    line-height: 1.5;
+  }
+
+  /* LOADING */
+  .analyzing-msg {
+    display: none;
+    padding: 0 20px 20px;
+    align-items: center;
+    gap: 12px;
+  }
+  .analyzing-msg.show { display: flex; }
+  .spinner {
+    width: 22px; height: 22px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .analyzing-text {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+  }
+
+  /* CAMERA SELECT */
+  .cam-select-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  select {
+    background: #0a0c0b;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 6px 10px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.72rem;
+    flex: 1;
+    cursor: pointer;
+    outline: none;
+  }
+  select:focus { border-color: var(--muted); }
+  .cam-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+
+  @media (max-width: 480px) {
+    .logo { font-size: 2.4rem; }
+    .size-value { font-size: 2.2rem; }
+    .size-card:not(.primary) .size-value { font-size: 1.7rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="logo">Bolt<span>Scan</span></div>
+    <div class="tagline">AI-Powered Wrench Size Identifier</div>
+  </div>
+</header>
+
+<div class="card">
+  <!-- CAMERA -->
+  <div class="camera-wrap" id="cameraWrap">
+    <video id="video" autoplay playsinline muted></video>
+    <img id="snapshot" alt="Captured bolt">
+    <canvas id="canvas"></canvas>
+
+    <div class="crosshair">
+      <div class="crosshair-ring"></div>
+    </div>
+    <div class="corner corner-tl"></div>
+    <div class="corner corner-tr"></div>
+    <div class="corner corner-bl"></div>
+    <div class="corner corner-br"></div>
+    <div class="scan-line" id="scanLine"></div>
+  </div>
+
+  <!-- STATUS -->
+  <div class="status-bar">
+    <div class="status-dot" id="statusDot"></div>
+    <span id="statusText">Initializing camera...</span>
+  </div>
+
+  <!-- CONTROLS -->
+  <div class="controls">
+    <div class="cam-select-wrap">
+      <span class="cam-label">Camera</span>
+      <select id="cameraSelect"><option>Loading cameras...</option></select>
+    </div>
+    <div class="tip">Center the bolt head within the circle, then tap Scan. Works best with good lighting and a clear top-down view.</div>
+    <div class="btn-row">
+      <button id="scanBtn" disabled>⬡ Scan Bolt</button>
+      <button id="retakeBtn">↺ Retake</button>
+    </div>
+  </div>
+
+  <!-- ANALYZING -->
+  <div class="analyzing-msg" id="analyzingMsg">
+    <div class="spinner"></div>
+    <div class="analyzing-text">Analyzing bolt head geometry...</div>
+  </div>
+
+  <!-- RESULTS -->
+  <div id="results">
+    <div class="result-header">Scan Results</div>
+
+    <div class="size-grid">
+      <div class="size-card primary">
+        <div class="size-label">Best Match — Wrench / Socket Size</div>
+        <div class="size-value" id="primarySize">—</div>
+        <div class="size-sub" id="primarySub"></div>
+      </div>
+      <div class="size-card">
+        <div class="size-label">Metric</div>
+        <div class="size-value" id="metricSize">—</div>
+        <div class="size-sub" id="metricSub"></div>
+      </div>
+      <div class="size-card">
+        <div class="size-label">SAE / Imperial</div>
+        <div class="size-value" id="saeSize">—</div>
+        <div class="size-sub" id="saeSub"></div>
+      </div>
+    </div>
+
+    <div class="bolt-info" id="boltInfo"></div>
+
+    <div class="confidence-bar">
+      <div class="confidence-fill" id="confidenceFill"></div>
+    </div>
+    <div class="confidence-label">
+      <span>Confidence</span>
+      <span id="confidencePct">—</span>
+    </div>
+
+    <br>
+    <div class="disclaimer" id="disclaimer"></div>
+  </div>
+
+  <!-- ERROR -->
+  <div id="errorBox">
+    <div class="error-inner" id="errorText"></div>
+  </div>
+</div>
+
+<script>
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const snapshot = document.getElementById('snapshot');
+const scanBtn = document.getElementById('scanBtn');
+const retakeBtn = document.getElementById('retakeBtn');
+const cameraWrap = document.getElementById('cameraWrap');
+const statusDot = document.getElementById('statusDot');
+const statusText = document.getElementById('statusText');
+const analyzingMsg = document.getElementById('analyzingMsg');
+const results = document.getElementById('results');
+const errorBox = document.getElementById('errorBox');
+const cameraSelect = document.getElementById('cameraSelect');
+
+let stream = null;
+let cameras = [];
+
+function setStatus(state, text) {
+  statusDot.className = 'status-dot ' + state;
+  statusText.textContent = text;
+}
+
+async function getCameras() {
+  try {
+    await navigator.mediaDevices.getUserMedia({ video: true });
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    cameras = devices.filter(d => d.kind === 'videoinput');
+    cameraSelect.innerHTML = '';
+    cameras.forEach((cam, i) => {
+      const opt = document.createElement('option');
+      opt.value = cam.deviceId;
+      opt.textContent = cam.label || `Camera ${i + 1}`;
+      // Prefer back camera on mobile
+      if (cam.label.toLowerCase().includes('back') || cam.label.toLowerCase().includes('rear')) {
+        opt.selected = true;
+      }
+      cameraSelect.appendChild(opt);
+    });
+    startCamera(cameraSelect.value);
+  } catch(e) {
+    setStatus('error', 'Camera access denied');
+    scanBtn.disabled = true;
+  }
+}
+
+async function startCamera(deviceId) {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  try {
+    const constraints = {
+      video: {
+        deviceId: deviceId ? { exact: deviceId } : undefined,
+        facingMode: deviceId ? undefined : { ideal: 'environment' },
+        width: { ideal: 1280 },
+        height: { ideal: 960 }
+      }
+    };
+    stream = await navigator.mediaDevices.getUserMedia(constraints);
+    video.srcObject = stream;
+    setStatus('live', 'Live — Ready to scan');
+    scanBtn.disabled = false;
+  } catch(e) {
+    setStatus('error', 'Camera error: ' + e.message);
+  }
+}
+
+cameraSelect.addEventListener('change', () => startCamera(cameraSelect.value));
+
+getCameras();
+
+function captureFrame() {
+  const w = video.videoWidth;
+  const h = video.videoHeight;
+  canvas.width = w;
+  canvas.height = h;
+  canvas.getContext('2d').drawImage(video, 0, 0, w, h);
+  return canvas.toDataURL('image/jpeg', 0.92).split(',')[1];
+}
+
+function resetUI() {
+  snapshot.style.display = 'none';
+  video.style.display = 'block';
+  cameraWrap.classList.remove('scanning');
+  scanBtn.style.display = 'block';
+  scanBtn.disabled = false;
+  scanBtn.textContent = '⬡ Scan Bolt';
+  retakeBtn.style.display = 'none';
+  results.style.display = 'none';
+  errorBox.style.display = 'none';
+  analyzingMsg.classList.remove('show');
+  setStatus('live', 'Live — Ready to scan');
+}
+
+retakeBtn.addEventListener('click', resetUI);
+
+scanBtn.addEventListener('click', async () => {
+  const imageData = captureFrame();
+
+  // Show snapshot
+  snapshot.src = 'data:image/jpeg;base64,' + imageData;
+  snapshot.style.display = 'block';
+  video.style.display = 'none';
+
+  cameraWrap.classList.add('scanning');
+  scanBtn.style.display = 'none';
+  retakeBtn.style.display = 'block';
+  results.style.display = 'none';
+  errorBox.style.display = 'none';
+  analyzingMsg.classList.add('show');
+  setStatus('analyzing', 'Analyzing image...');
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        messages: [{
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: { type: 'base64', media_type: 'image/jpeg', data: imageData }
+            },
+            {
+              type: 'text',
+              text: `You are a precision tool identification expert. Analyze this image and identify the bolt or nut head visible.
+
+Respond ONLY with a valid JSON object (no markdown, no backticks, no extra text):
+{
+  "detected": true or false,
+  "primarySize": "the single best wrench/socket size recommendation as a string (prefer metric if standard, e.g. '13mm')",
+  "primaryLabel": "short description like 'Metric Hex Head'",
+  "metric": "metric wrench size, e.g. '13mm' or 'M8 bolt head'",
+  "metricNote": "brief note, e.g. 'Standard metric'",
+  "sae": "closest SAE/imperial equivalent, e.g. '1/2\"' or '13/32\"'",
+  "saeNote": "brief note",
+  "boltType": "e.g. Hex Head, Carriage Bolt, Socket Cap, Flange Bolt, Nut, etc.",
+  "driveType": "e.g. External Hex, Internal Hex (Allen), Torx, Phillips, Slotted, Square",
+  "material": "estimated material if visible, e.g. Steel, Stainless Steel, Galvanized, Grade 8",
+  "estimatedDiameter": "estimated thread diameter if determinable, e.g. M10, 3/8 inch",
+  "confidence": integer 0-100,
+  "notes": "any important notes, warnings, or tips for the user (1-2 sentences max)"
+}
+
+If no bolt/nut/fastener is clearly visible, set detected to false and explain in notes. Be conservative with confidence — only go above 85 if the image is very clear.`
+            }
+          ]
+        }]
+      })
+    });
+
+    const data = await response.json();
+    cameraWrap.classList.remove('scanning');
+    analyzingMsg.classList.remove('show');
+
+    if (!response.ok) {
+      throw new Error(data.error?.message || 'API error ' + response.status);
+    }
+
+    const raw = data.content.find(b => b.type === 'text')?.text || '';
+    let parsed;
+    try {
+      const cleaned = raw.replace(/```json|```/g, '').trim();
+      parsed = JSON.parse(cleaned);
+    } catch(e) {
+      throw new Error('Could not parse AI response. Try again.');
+    }
+
+    if (!parsed.detected) {
+      showError('No bolt or fastener detected in the image. ' + (parsed.notes || 'Make sure the bolt head is clearly visible and well-lit.'));
+      return;
+    }
+
+    renderResults(parsed);
+
+  } catch(err) {
+    cameraWrap.classList.remove('scanning');
+    analyzingMsg.classList.remove('show');
+    showError(err.message || 'An unexpected error occurred. Please try again.');
+  }
+});
+
+function renderResults(d) {
+  document.getElementById('primarySize').textContent = d.primarySize || '—';
+  document.getElementById('primarySub').textContent = d.primaryLabel || '';
+  document.getElementById('metricSize').textContent = d.metric || '—';
+  document.getElementById('metricSub').textContent = d.metricNote || '';
+  document.getElementById('saeSize').textContent = d.sae || '—';
+  document.getElementById('saeSub').textContent = d.saeNote || '';
+
+  const infoEl = document.getElementById('boltInfo');
+  const fields = [
+    ['Type', d.boltType],
+    ['Drive', d.driveType],
+    ['Material', d.material],
+    ['Thread Dia.', d.estimatedDiameter]
+  ].filter(([,v]) => v && v !== 'Unknown');
+
+  infoEl.innerHTML = fields.map(([k, v]) =>
+    `<div class="info-item"><span class="info-key">${k}</span><span class="info-val">${v}</span></div>`
+  ).join('');
+
+  const conf = Math.min(100, Math.max(0, d.confidence || 0));
+  document.getElementById('confidencePct').textContent = conf + '%';
+  setTimeout(() => {
+    document.getElementById('confidenceFill').style.width = conf + '%';
+  }, 100);
+
+  document.getElementById('disclaimer').textContent =
+    (d.notes || '') + (d.notes ? ' ' : '') +
+    'Always verify with a physical gauge before critical applications. AI identification may vary with image quality.';
+
+  results.style.display = 'block';
+  setStatus('done', 'Analysis complete');
+}
+
+function showError(msg) {
+  document.getElementById('errorText').textContent = msg;
+  errorBox.style.display = 'block';
+  setStatus('error', 'Detection failed');
+}
+</script>
+</body>
+</html>
